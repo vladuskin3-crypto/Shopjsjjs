@@ -30,7 +30,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN", "8779271516:AAGYZnk5SkilyfPcRrJzkzRA1Y1C4anBi
 ADMIN_IDS = {int(x) for x in os.getenv("ADMIN_IDS", "8759747461").split(",") if x.strip()}
 SUPPORT = "@Mormonsq"                                   # поддержка
 PAY_LINK = os.getenv("PAY_LINK", "http://t.me/send?start=IVXbX0mcEeBt")   # счёт в Crypto Bot (ручное подтверждение)
-SHOP_NAME = "SM"
+SHOP_NAME = "Dodo pizza"
 CURRENCY = "$"
 CRYPTO_TOKEN = os.getenv("CRYPTO_TOKEN", "")      # токен Crypto Pay (@CryptoBot)
 CRYPTO_TESTNET = os.getenv("CRYPTO_TESTNET", "0") == "1"   # 1 = тестовая сеть (@CryptoTestnetBot)
@@ -368,6 +368,7 @@ def panel_kb():
         ("📊 Статистика", "ad_stats"), ("🚫 Удалить отзыв", "ad_delrev"),
         (f"💳 Заявки на пополнение ({pend})", "ad_topups"), ("✏️ Описание кнопок", "ad_texts"),
         ("🧾 Последние заказы", "ad_orders"), ("🖼 Фото приветствия", "ad_photo"),
+        ("🗂 Удалить раздел", "ad_dels"),
         (f"🛠 Техработы: {'ВКЛ' if maint else 'ВЫКЛ'}", "ad_maint"),
     ]
     kb = InlineKeyboardBuilder()
@@ -820,6 +821,41 @@ async def pd_ask(c: CallbackQuery):
 async def pd_do(c: CallbackQuery):
     run("DELETE FROM products WHERE id=?", (int(c.data.split(":")[1]),))
     await show(c, "✅ Товар удалён", back_panel())
+    await c.answer()
+
+
+# удалить раздел (вместе с его товарами)
+@admin.callback_query(F.data == "ad_dels")
+async def ad_dels(c: CallbackQuery):
+    secs = many("SELECT s.id, s.name, (SELECT COUNT(*) FROM products p WHERE p.section_id=s.id) n FROM sections s")
+    kb = InlineKeyboardBuilder()
+    for s in secs:
+        kb.row(B(f"🗂 {s['name']} ({s['n']})", f"sd:{s['id']}"))
+    kb.row(B("⬅️ Панель", "adm", False))
+    await show(c, "🗂 Выберите раздел для удаления:" if secs else "Разделов пока нет.", kb.as_markup())
+    await c.answer()
+
+
+@admin.callback_query(F.data.startswith("sd:"))
+async def sd_ask(c: CallbackQuery):
+    sid = int(c.data.split(":")[1])
+    s = one("SELECT * FROM sections WHERE id=?", (sid,))
+    if not s:
+        return await c.answer("Раздел не найден", show_alert=True)
+    n = one("SELECT COUNT(*) n FROM products WHERE section_id=?", (sid,))["n"]
+    kb = InlineKeyboardBuilder()
+    kb.row(B("🗑 Да, удалить", f"sdy:{sid}"), B("✖️ Нет", "adm", False))
+    await show(c, f"Удалить раздел <b>{esc(s['name'])}</b>?\n\n⚠️ Вместе с ним удалятся все товары в нём: {n} шт.",
+               kb.as_markup())
+    await c.answer()
+
+
+@admin.callback_query(F.data.startswith("sdy:"))
+async def sd_do(c: CallbackQuery):
+    sid = int(c.data.split(":")[1])
+    run("DELETE FROM products WHERE section_id=?", (sid,))
+    run("DELETE FROM sections WHERE id=?", (sid,))
+    await show(c, "✅ Раздел удалён", back_panel())
     await c.answer()
 
 
